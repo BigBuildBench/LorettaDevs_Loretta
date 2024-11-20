@@ -1,0 +1,78 @@
+# Docs build script based on https://tehgm.net/blog/docfx-github-actions/
+name: DocFX Build and Publish
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      target_branch:
+        type: string
+        description: The branch the results will be deployed to
+        default: cf-pages
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-docs:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            6.0.x
+            7.0.x
+
+      - name: Setup DocFX
+        uses: crazy-max/ghaction-chocolatey@v1
+        with:
+          args: install docfx
+
+      - name: Install dependencies
+        run: dotnet restore
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
+      - name: DocFX Build
+        working-directory: docs
+        run: docfx docfx.json
+        continue-on-error: false
+
+      - name: Copy static assets
+        run: |
+          Get-ChildItem -Recurse -Name ./docs/static/ | ForEach-Object {
+            Move-Item -Path "./docs/static/$_" "./docs/_site/$_";
+          }
+        shell: pwsh
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts
+          path: |
+            docs/_site
+            docs/api
+            docs/obj
+            !docs/api/.gitignore
+            !docs/api/index.md
+
+      - name: Publish
+        if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_branch: "${{ github.event_name == 'workflow_dispatch' && inputs.target_branch || 'cf-pages' }}"
+          publish_dir: docs/_site
+          user_name: "github-actions[bot]"
+          user_email: "github-actions[bot]@users.noreply.github.com"
+          commit_message: "${{ github.event.head_commit.message }}"

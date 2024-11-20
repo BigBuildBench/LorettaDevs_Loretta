@@ -1,0 +1,11 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <Import Project="$(MSBuildThisFileDirectory)../../../../build/LibraryProject.props" />
+
+    <!-- Package data -->
+    <PropertyGroup>
+        <PackageId>Loretta.CodeAnalysis.Lua.Experimental</PackageId>
+        <Description>Experimental code that might become part of Loretta.CodeAnalysis.Lua.</Description>
+    </PropertyGroup>
+
+</Project>

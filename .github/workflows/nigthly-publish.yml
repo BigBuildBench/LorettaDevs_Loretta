@@ -1,0 +1,97 @@
+name: Nightly Release
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+jobs:
+  build:
+    uses: ./.github/workflows/build-and-test.yml
+
+  extract-nightly-info:
+    name: Extract Nightly Info
+    runs-on: ubuntu-latest
+    needs:
+      - build
+    outputs:
+      full-version: ${{ steps.gen-version.outputs.VERSION }}
+      no-prefix-version: ${{ steps.gen-version.outputs.NO_PREFIX_VERSION }}
+      has-nightly: ${{ steps.gen-version.outputs.HAS_NIGHTLY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract Latest Changes
+        run: ./build/Extract-LatestChanges.ps1
+        shell: pwsh
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Generate Version Number
+        id: gen-version
+        run: |
+          dotnet run --project src/Tools/NightlyTool --verbosity quiet -- $env:GITHUB_OUTPUT
+        shell: pwsh
+
+      - name: Tag New Nightly
+        if: steps.gen-version.outputs.HAS_NIGHTLY == 'yes'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag --annotate --file=LATESTCHANGES.md --cleanup=whitespace ${{ steps.gen-version.outputs.VERSION }}
+          git push origin ${{ steps.gen-version.outputs.VERSION }}
+        shell: pwsh
+
+  release:
+    name: Release
+    runs-on: windows-latest
+    needs:
+      - build
+      - extract-nightly-info
+    if: needs.extract-nightly-info.outputs.has-nightly == 'yes'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            6.0.x
+            7.0.x
+
+      - name: Install dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --no-restore --configuration Release -p:Version=${{ needs.extract-nightly-info.outputs.no-prefix-version }}
+
+      - name: Generate NuGet packages
+        run: dotnet pack --no-restore --configuration Release --output ./packages --include-symbols -p:SymbolPackageFormat=snupkg -p:Version=${{ needs.extract-nightly-info.outputs.no-prefix-version }}
+
+      - name: Publish packages
+        run: |
+          Get-ChildItem -Path ./packages/ -Filter *.nupkg -File -Name | ForEach-Object {
+            dotnet nuget push ./packages/$_ --source https://api.nuget.org/v3/index.json --api-key ${{ secrets.NUGET_API_KEY }} --skip-duplicate
+          }
+        shell: pwsh
+
+      - name: Extract Latest Changes
+        run: ./build/Extract-LatestChanges.ps1
+        shell: pwsh
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          name: ${{ needs.extract-nightly-info.outputs.full-version }}
+          tag_name: ${{ needs.extract-nightly-info.outputs.full-version }}
+          body_path: LATESTCHANGES.md
+          prerelease: true

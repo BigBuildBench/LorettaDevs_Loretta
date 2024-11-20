@@ -1,0 +1,18 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+    <Import Project="$(MSBuildThisFileDirectory)../../../build/BaseProject.props" />
+
+    <PropertyGroup>
+        <TargetFramework>netstandard2.0</TargetFramework>
+        <NeutralLanguage>en-US</NeutralLanguage>
+
+        <!-- Avoid ID conflicts with the package project. -->
+        <PackageId>*$(MSBuildProjectFile)*</PackageId>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <Compile Update="Resources.Designer.cs" DesignTime="True" AutoGen="True" DependentUpon="Resources.resx" />
+        <EmbeddedResource Update="Resources.resx" Generator="ResXFileCodeGenerator" LastGenOutput="Resources.Designer.cs" />
+    </ItemGroup>
+
+</Project>

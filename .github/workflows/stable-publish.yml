@@ -1,0 +1,54 @@
+name: Stable Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+      - '!v*-nightly.*'
+
+jobs:
+  build:
+    uses: ./.github/workflows/build-and-test.yml
+
+  release:
+    name: Release
+    runs-on: windows-latest
+    needs: [build]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            6.0.x
+            7.0.x
+
+      - name: Install dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Generate NuGet packages
+        run: dotnet pack --configuration Release --output ./packages --no-restore --include-symbols -p:SymbolPackageFormat=snupkg
+
+      - name: Publish packages
+        run: |
+          Get-ChildItem -Path ./packages/ -Filter *.nupkg -File -Name | ForEach-Object {
+            dotnet nuget push ./packages/$_ --source https://api.nuget.org/v3/index.json --api-key ${{ secrets.NUGET_API_KEY }} --skip-duplicate
+          }
+        shell: pwsh
+
+      - name: Extract Latest Changes
+        run: ./build/Extract-LatestChanges.ps1
+        shell: pwsh
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          body_path: LATESTCHANGES.md
+          prerelease: ${{ contains(github.ref, 'beta') || contains(github.ref, 'alpha') }}
